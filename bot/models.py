@@ -1,37 +1,53 @@
-from aiogram import Dispatcher, types, Bot
-from aiogram.types import ReplyKeyboardMarkup, InlineKeyboardButton
+from aiogram import Dispatcher, Bot
+import cachetools.func
 
-
-async def handle_determinant_btn_callback(callback_query: types.CallbackQuery):
-    for s in Determinants.names:
-        if str(hash(s)) == callback_query.data:
-            await Determinants.bot.answer_callback_query(callback_query.id, "Нажата кнопка с текстом " + s)
+import swagger_client
+from swagger_client import ApiClient, AuthApi, TeleagronomUser
 
 
 class Determinants:
-    names = []
-    dp = None
-    bot = None
+    def __init__(self, bot: Bot, dp: Dispatcher, api_client: ApiClient):
+        self.dp = dp
+        self.bot = bot
+        self.api_client = api_client
+        self.determinant_api = swagger_client.V1determinantApi(api_client)
 
-    def __init__(self, bot: Bot, dp: Dispatcher):
-        Determinants.dp = dp
-        Determinants.bot = bot
+    @property
+    @cachetools.func.ttl_cache(maxsize=1, ttl=60)
+    def active(self):
+        return self.determinant_api.determinant_active_retrieve()
 
-        async def keyboard_handler(message: types.Message):
-            markup = ReplyKeyboardMarkup(row_width=2)
-            markup.add(
-                *[InlineKeyboardButton("1", callback_data="1")]
-                # str(hash(s))) for s in Determinants.names]
-            )
-            await message.answer("Определители болезни", reply_markup=markup)
+    @property
+    def names(self):
+        active_determs = self.active
+        return [s.name for s in active_determs]
 
-        dp.register_message_handler(keyboard_handler, state='*', regexp="keyboard")
+    def id_from_name(self, name: str):
+        active_determs = self.active
+        for d in active_determs:
+            if d.name.strip().lower() == name.strip().lower():
+                return d.id
+
+    # def add_determinants(self, *args):
+    #     Determinants.names.extend(args)
+    #     self.dp.register_callback_query_handler(
+    #         handle_determinant_btn_callback,
+    #         lambda c: True
+    #     # c.data in [str(hash(s)) for s in Determinants.names]
+    #     )
 
 
-    def add_determinants(self, *args):
-        Determinants.names.extend(args)
-        self.dp.register_callback_query_handler(
-            handle_determinant_btn_callback,
-            lambda c: True
-        # c.data in [str(hash(s)) for s in Determinants.names]
-        )
+class Me:
+    def __init__(self, bot: Bot, dp: Dispatcher, auth_api: AuthApi):
+        self.dp = dp
+        self.bot = bot
+        self.auth_api = auth_api
+
+    @property
+    @cachetools.func.ttl_cache(maxsize=1, ttl=60)
+    def me(self) -> TeleagronomUser:
+        return self.auth_api.auth_users_me_retrieve()
+
+    @property
+    def id(self):
+        return self.me.id
