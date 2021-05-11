@@ -1,5 +1,5 @@
-from aiogram import Dispatcher, Bot
 import cachetools.func
+from aiogram import Dispatcher, Bot
 
 import swagger_client
 from swagger_client import ApiClient, AuthApi, TeleagronomUser
@@ -27,14 +27,6 @@ class Determinants:
         for d in active_determs:
             if d.name.strip().lower() == name.strip().lower():
                 return d.id
-
-    # def add_determinants(self, *args):
-    #     Determinants.names.extend(args)
-    #     self.dp.register_callback_query_handler(
-    #         handle_determinant_btn_callback,
-    #         lambda c: True
-    #     # c.data in [str(hash(s)) for s in Determinants.names]
-    #     )
 
 
 class Me:

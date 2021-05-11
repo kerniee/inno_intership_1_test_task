@@ -1,28 +1,27 @@
-import logging
 import asyncio
+import logging
 import pprint
 import re
 from datetime import datetime
 
+import prettytable as pt
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.contrib.fsm_storage.redis import RedisStorage
 from aiogram.contrib.middlewares.logging import LoggingMiddleware
+from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters import StateFilter
 from aiogram.dispatcher.filters.state import State, StatesGroup
-from aiogram.dispatcher import FSMContext
-from aiogram.utils.markdown import text, bold, italic, code, pre, link
 from aiogram.types import InlineKeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, ParseMode, \
     InlineKeyboardMarkup
+from aiogram.utils.markdown import text, bold, link
 from decouple import config
-import prettytable as pt
-
-import swagger_client.configuration
-from bot.utils import MyStateFilter
-from swagger_client import ApiClient, DeterminantProgress, AnswerQuestion
-from swagger_client.rest import ApiException
 
 import bot.messages as msg
+import swagger_client.configuration
 from bot.models import Determinants, Me
+from bot.utils import MyStateFilter
+from swagger_client import ApiClient, AnswerQuestion
+from swagger_client.rest import ApiException
 
 TELEGRAM_API_TOKEN = config("TELEGRAM_API_TOKEN")
 REDIS_IP = config("REDIS_IP")
@@ -59,23 +58,36 @@ dp.filters_factory.bind(MyStateFilter, exclude_event_handlers=[
     dp.poll_handlers,
     dp.poll_answer_handlers,
 ])
-dp.middleware.setup(LoggingMiddleware())
 
-# def _auth(self, token: str):
-#     self.default_headers["Authorization"] = f"Bearer {token}"
-#
-#
-# setattr(
-#     swagger_client.ApiClient,
-#     "set_auth_token",
-#     _auth
-# )
+
+class MyLoggingMiddleware(LoggingMiddleware):
+    def __init__(self):
+        logger = logging.getLogger(__name__)
+        fh = logging.FileHandler('log.log')
+        fh.setLevel(logging.INFO)
+        logger.addHandler(fh)
+        super().__init__(logger)
+
+    async def on_pre_process_message(self, message: types.Message, data: dict):
+        self.logger.info(
+            f"Received message [ID:{message.message_id}] in chat [{message.chat.type}:{message.chat.last_name} {message.chat.first_name}]\n"
+            f"Message text: {message.text}")
+
+
+logging_middleware = MyLoggingMiddleware()
+dp.middleware.setup(logging_middleware)
+
 auth_api = swagger_client.AuthApi(api_client)
 progress_api = swagger_client.V1progressApi(api_client)
-# barley_determinant = swagger_client.BarleyDeterminantControllerApi(api_client)
 
 determinants = Determinants(bot, dp, api_client)
 me = Me(bot, dp, auth_api)
+
+menu_markup = ReplyKeyboardMarkup(row_width=2)
+menu_markup.add(
+    InlineKeyboardButton(msg.my_determinants),
+    InlineKeyboardButton(msg.new_determinant)
+)
 
 
 class States(StatesGroup):
@@ -138,7 +150,6 @@ async def login_password_read(message: types.Message, state: FSMContext):
         data["token"] = resp.access
         save_token = storage_state.set_data(chat=message.chat.id, user=message.from_user.id,
                                             data={"token": resp.access})
-        # api_client.default_headers["authorization"] = f"JWT {resp.access}"
     answer = await req
     await answer.edit_text(msg.logging_completed)
     await States.logged.set()
@@ -153,12 +164,7 @@ async def login_password_read(message: types.Message, state: FSMContext):
 
 @dp.message_handler(commands=["menu"], state=States.logged)
 async def menu(message: types.Message):
-    markup = ReplyKeyboardMarkup(row_width=2)
-    markup.add(
-        InlineKeyboardButton(msg.my_determinants),
-        InlineKeyboardButton(msg.new_determinant)
-    )
-    await message.answer(msg.choose_button, reply_markup=markup)
+    await message.answer(msg.choose_button, reply_markup=menu_markup)
 
 
 @dp.message_handler(commands=["determinant"], state=States.logged)
@@ -180,7 +186,6 @@ async def show_determinant(message: types.Message, state: FSMContext):
 @dp.message_handler(regexp=f'^{msg.my_determinants}', state=States.logged)
 async def my_determinants_button(message: types.Message, state: FSMContext):
     all_determinants = progress_api.progress_list()
-    # logging.info(str(all_determinants))
     table = pt.PrettyTable(['Название', 'Дата создания', 'Болезнь', 'Статус'])
     table._max_width = {
         'Название': 20,
@@ -200,10 +205,6 @@ async def my_determinants_button(message: types.Message, state: FSMContext):
 
 @dp.message_handler(regexp=f'^{msg.new_determinant}', state=States.logged)
 async def new_determinant_show_layout(message: types.Message, state: FSMContext):
-    # try:
-    #     resp2 = barley_determinant.get_all_using_get()
-    # except ApiException:
-    #     pass
     markup = ReplyKeyboardMarkup(row_width=2)
     markup.add(
         *[InlineKeyboardButton(s, callback_data=str(hash(s))) for s in determinants.names]
@@ -242,6 +243,7 @@ async def show_determinant_in_progress(_id: int, message: types.Message, state: 
     _text, inline_kb = generate_text(current_item, _id)
 
     if len(_text) > 4096:
+        new_message = None
         for x in range(0, len(_text), 4096):
             new_message = await message.answer(_text[x:x + 4096], parse_mode=ParseMode.MARKDOWN, reply_markup=inline_kb)
     else:
@@ -263,7 +265,7 @@ def generate_text(current_item, _id):
             bold(str(current_item["number"]).strip()),
             f'. {current_item["title"]}\n',
             'Варианты ответа:\n',
-            '\n'.join(["    " + i["text"] for i in current_item["answers"]]), sep=''
+            '\n'.join(["---- " + i["text"] for i in current_item["answers"]]), sep=''
         )
         btns = [
             InlineKeyboardButton(ans["text"], callback_data=f'add_det__{_id}_{ans["number"]}')
@@ -274,9 +276,9 @@ def generate_text(current_item, _id):
         progress = progress_api.progress_retrieve(_id)
         pp = pprint.PrettyPrinter(indent=1, width=200)
         _text = text(f"Название болезни: {current_item['title']}\n"
-                     f"Больше информации на",
-                     link("сайте", f'http://dev.teleagronom.com/determinant/{progress.determinant["id"]}/{_id}'))
-        # _text += progress.disease.to_str()
+                     f"Больше информации на ",
+                     link("сайте", f'http://dev.teleagronom.com/determinant/{progress.determinant["id"]}/{_id}'),
+                     "\nВведите /menu чтобы вернуться в меню", sep='')
     else:
         raise Exception(f"Unknown type: {current_item['type']}")
     return _text, inline_kb
@@ -296,7 +298,6 @@ async def process_callback_button1(callback_query: types.CallbackQuery, state: F
         await bot.edit_message_text(_text, **res, parse_mode=ParseMode.MARKDOWN, reply_markup=inline_kb)
     else:
         raise Exception("Invalid button data")
-        # await bot.send_message(callback_query.from_user.id, 'Нажата кнопка!')
 
 
 @dp.message_handler()
@@ -304,11 +305,11 @@ async def not_logged(message: types.Message):
     await message.answer(msg.not_logged)
 
 
-# @dp.message_handler(commands=['start', 'help'])
-# async def welcome(message: types.Message, state):
-#     await message.reply()
-
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=True)
     asyncio.run(dp.storage.close())
     asyncio.run(dp.storage.wait_closed())
+    for h in logging_middleware.logger.handlers:
+        h.close()
+        logging_middleware.logger.removeHandler(h)
+    logging_middleware.logger.shutdown()

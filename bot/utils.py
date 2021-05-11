@@ -11,7 +11,10 @@ class MyStateFilter(StateFilter):
     @staticmethod
     async def set_auth_token(state: FSMContext):
         async with state.proxy() as data:
-            MyStateFilter.api_client.configuration.api_key = {"Authorization": data["token"]}
+            try:
+                MyStateFilter.api_client.configuration.api_key = {"Authorization": data["token"]}
+            except KeyError:
+                return
 
     async def check(self, obj):
         await MyStateFilter.set_auth_token(self.dispatcher.current_state())
