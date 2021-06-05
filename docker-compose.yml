@@ -1,0 +1,17 @@
+version: "3.9"
+services:
+  bot:
+    build: .
+    volumes:
+      - .:/usr/src/app
+      - logvolume_telegram_bot:/usr/src/app/logs
+    links:
+      - redis_db
+    environment:
+      - USE_REDIS=true
+      - REDIS_IP=redis_db
+      - REDIS_PORT=6379
+  redis_db:
+    image: redis
+volumes:
+  logvolume_telegram_bot: {}

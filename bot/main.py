@@ -1,11 +1,14 @@
 import asyncio
 import logging
+import os
 import pprint
 import re
 from datetime import datetime
+from pathlib import Path
 
 import prettytable as pt
 from aiogram import Bot, Dispatcher, executor, types
+from aiogram.contrib.fsm_storage.files import JSONStorage
 from aiogram.contrib.fsm_storage.redis import RedisStorage
 from aiogram.contrib.middlewares.logging import LoggingMiddleware
 from aiogram.dispatcher import FSMContext
@@ -24,10 +27,9 @@ from swagger_client import ApiClient, AnswerQuestion
 from swagger_client.rest import ApiException
 
 TELEGRAM_API_TOKEN = config("TELEGRAM_API_TOKEN")
-REDIS_IP = config("REDIS_IP")
-REDIS_PORT = config("REDIS_PORT", cast=int, default=6379)
-REDIS_PASSWORD = config("REDIS_PASSWORD_MASTER")
 DEBUG = config("TELEGRAM_BOT_DEBUG", cast=bool, default=False)
+
+USE_REDIS = config("USE_REDIS", cast=bool, default=False)
 
 if DEBUG:
     logging.basicConfig(level=logging.DEBUG)
@@ -35,13 +37,22 @@ else:
     logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=TELEGRAM_API_TOKEN)
-REDIS_CONF = {
-    "host": REDIS_IP,
-    "port": REDIS_PORT,
-    "password": REDIS_PASSWORD,
-    "db": 5
-}
-storage_state = RedisStorage(**REDIS_CONF)
+
+if USE_REDIS:
+    REDIS_IP = config("REDIS_IP")
+    REDIS_PORT = config("REDIS_PORT", cast=int, default=6379)
+    REDIS_PASSWORD = config("REDIS_PASSWORD_MASTER", default=None)
+    REDIS_CONF = {
+        "host": REDIS_IP,
+        "port": REDIS_PORT,
+        "db": 5
+    }
+    if REDIS_PASSWORD is not None:
+        REDIS_CONF["password"] = REDIS_PASSWORD
+    storage_state = RedisStorage(**REDIS_CONF)
+else:
+    DB_PATH = './db.json'
+    storage_state = JSONStorage(DB_PATH)
 
 config = swagger_client.Configuration()
 config.api_key_prefix["Authorization"] = "JWT"
@@ -63,7 +74,10 @@ dp.filters_factory.bind(MyStateFilter, exclude_event_handlers=[
 class MyLoggingMiddleware(LoggingMiddleware):
     def __init__(self):
         logger = logging.getLogger(__name__)
-        fh = logging.FileHandler('log.log')
+        os.makedirs("logs", exist_ok=True)
+        log_path = Path('logs/log.txt')
+        log_path.touch(exist_ok=True)
+        fh = logging.FileHandler(log_path.as_posix())
         fh.setLevel(logging.INFO)
         logger.addHandler(fh)
         super().__init__(logger)
@@ -312,4 +326,5 @@ if __name__ == '__main__':
     for h in logging_middleware.logger.handlers:
         h.close()
         logging_middleware.logger.removeHandler(h)
-    logging_middleware.logger.shutdown()
+    if hasattr(logging_middleware.logger, "shutdown"):
+        logging_middleware.logger.shutdown()
