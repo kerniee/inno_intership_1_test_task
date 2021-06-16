@@ -9,7 +9,7 @@ from pathlib import Path
 import prettytable as pt
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.contrib.fsm_storage.files import JSONStorage
-from aiogram.contrib.fsm_storage.redis import RedisStorage
+from aiogram.contrib.fsm_storage.redis import RedisStorage2
 from aiogram.contrib.middlewares.logging import LoggingMiddleware
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters import StateFilter
@@ -45,11 +45,12 @@ if USE_REDIS:
     REDIS_CONF = {
         "host": REDIS_IP,
         "port": REDIS_PORT,
-        "db": 5
+        "db": 5,
+        "timeout": 10
     }
     if REDIS_PASSWORD is not None:
         REDIS_CONF["password"] = REDIS_PASSWORD
-    storage_state = RedisStorage(**REDIS_CONF)
+    storage_state = RedisStorage2(**REDIS_CONF)
 else:
     DB_PATH = './db.json'
     storage_state = JSONStorage(DB_PATH)
@@ -72,15 +73,18 @@ dp.filters_factory.bind(MyStateFilter, exclude_event_handlers=[
 
 
 class MyLoggingMiddleware(LoggingMiddleware):
-    def __init__(self):
-        logger = logging.getLogger(__name__)
-        os.makedirs("logs", exist_ok=True)
-        log_path = Path('logs/log.txt')
-        log_path.touch(exist_ok=True)
-        fh = logging.FileHandler(log_path.as_posix())
-        fh.setLevel(logging.INFO)
-        logger.addHandler(fh)
-        super().__init__(logger)
+    """
+        Logging to file
+    """
+    # def __init__(self):
+    #     logger = logging.getLogger(__name__)
+    #     os.makedirs("logs", exist_ok=True)
+    #     log_path = Path('logs/log.txt')
+    #     log_path.touch(exist_ok=True)
+    #     fh = logging.FileHandler(log_path.as_posix())
+    #     fh.setLevel(logging.INFO)
+    #     logger.addHandler(fh)
+    #     super().__init__(logger)
 
     async def on_pre_process_message(self, message: types.Message, data: dict):
         self.logger.info(
@@ -320,9 +324,23 @@ async def not_logged(message: types.Message):
 
 
 if __name__ == '__main__':
+    SENTRY_HOST = os.getenv("SENTRY_HOST")
+    if SENTRY_HOST:
+        from sentry_sdk.integrations.aiohttp import AioHttpIntegration
+        import sentry_sdk
+
+        sentry_sdk.init(
+            SENTRY_HOST,
+            integrations=[AioHttpIntegration()]
+        )
+
     executor.start_polling(dp, skip_updates=True)
     asyncio.run(dp.storage.close())
     asyncio.run(dp.storage.wait_closed())
+
+    dp.storage.close()
+    dp.storage.wait_closed()
+
     for h in logging_middleware.logger.handlers:
         h.close()
         logging_middleware.logger.removeHandler(h)

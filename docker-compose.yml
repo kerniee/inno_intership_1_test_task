@@ -4,7 +4,7 @@ services:
     build: .
     volumes:
       - .:/usr/src/app
-      - logvolume_telegram_bot:/usr/src/app/logs
+#      - logvolume_telegram_bot:/usr/src/app/logs
     links:
       - redis_db
     environment:
@@ -13,5 +13,5 @@ services:
       - REDIS_PORT=6379
   redis_db:
     image: redis
-volumes:
-  logvolume_telegram_bot: {}
+#volumes:
+#  logvolume_telegram_bot: {}
