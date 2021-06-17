@@ -1,10 +1,8 @@
 import asyncio
 import logging
 import os
-import pprint
 import re
 from datetime import datetime
-from pathlib import Path
 
 import prettytable as pt
 from aiogram import Bot, Dispatcher, executor, types
@@ -17,7 +15,7 @@ from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, ParseMode, \
     InlineKeyboardMarkup
 from aiogram.utils.markdown import text, bold, link
-from decouple import config
+from decouple import config as decouple_config
 
 import bot.messages as msg
 import swagger_client.configuration
@@ -26,10 +24,10 @@ from bot.utils import MyStateFilter
 from swagger_client import ApiClient, AnswerQuestion
 from swagger_client.rest import ApiException
 
-TELEGRAM_API_TOKEN = config("TELEGRAM_API_TOKEN")
-DEBUG = config("TELEGRAM_BOT_DEBUG", cast=bool, default=False)
-
-USE_REDIS = config("USE_REDIS", cast=bool, default=False)
+TELEGRAM_API_TOKEN = decouple_config("TELEGRAM_API_TOKEN")
+DEBUG = decouple_config("DEBUG", cast=bool, default=False)
+HOST = decouple_config("API_HOST", default="http://dev.teleagronom.com")
+USE_REDIS = decouple_config("USE_REDIS", cast=bool, default=False)
 
 if DEBUG:
     logging.basicConfig(level=logging.DEBUG)
@@ -38,10 +36,11 @@ else:
 
 bot = Bot(token=TELEGRAM_API_TOKEN)
 
+# Storage setup
 if USE_REDIS:
-    REDIS_IP = config("REDIS_IP")
-    REDIS_PORT = config("REDIS_PORT", cast=int, default=6379)
-    REDIS_PASSWORD = config("REDIS_PASSWORD_MASTER", default=None)
+    REDIS_IP = decouple_config("REDIS_IP")
+    REDIS_PORT = decouple_config("REDIS_PORT", cast=int, default=6379)
+    REDIS_PASSWORD = decouple_config("REDIS_PASSWORD_MASTER", default=None)
     REDIS_CONF = {
         "host": REDIS_IP,
         "port": REDIS_PORT,
@@ -55,15 +54,17 @@ else:
     DB_PATH = './db.json'
     storage_state = JSONStorage(DB_PATH)
 
+# Main API config
 config = swagger_client.Configuration()
 config.api_key_prefix["Authorization"] = "JWT"
-config.host = "http://dev.teleagronom.com"
+config.host = HOST
 config.debug = DEBUG
 api_client = ApiClient(config)
 
-MyStateFilter.api_client = api_client
-
 dp = Dispatcher(bot, storage=storage_state)
+
+# Workaround for setting auth token
+MyStateFilter.api_client = api_client
 dp.filters_factory.unbind(StateFilter)
 dp.filters_factory.bind(MyStateFilter, exclude_event_handlers=[
     dp.errors_handlers,
@@ -74,30 +75,22 @@ dp.filters_factory.bind(MyStateFilter, exclude_event_handlers=[
 
 class MyLoggingMiddleware(LoggingMiddleware):
     """
-        Logging to file
+    Custom logging
     """
-    # def __init__(self):
-    #     logger = logging.getLogger(__name__)
-    #     os.makedirs("logs", exist_ok=True)
-    #     log_path = Path('logs/log.txt')
-    #     log_path.touch(exist_ok=True)
-    #     fh = logging.FileHandler(log_path.as_posix())
-    #     fh.setLevel(logging.INFO)
-    #     logger.addHandler(fh)
-    #     super().__init__(logger)
 
     async def on_pre_process_message(self, message: types.Message, data: dict):
         self.logger.info(
-            f"Received message [ID:{message.message_id}] in chat [{message.chat.type}:{message.chat.last_name} {message.chat.first_name}]\n"
-            f"Message text: {message.text}")
+            f"Received message [ID:{message.message_id}] in chat [{message.chat.type}:{message.chat.last_name} {message.chat.first_name}]")
 
 
 logging_middleware = MyLoggingMiddleware()
 dp.middleware.setup(logging_middleware)
 
+# Different API
 auth_api = swagger_client.AuthApi(api_client)
 progress_api = swagger_client.V1progressApi(api_client)
 
+# Custom API Adaptors
 determinants = Determinants(bot, dp, api_client)
 me = Me(bot, dp, auth_api)
 
@@ -127,14 +120,13 @@ async def cmd_start(message: types.Message):
 @dp.message_handler(commands='help', state='*')
 async def cmd_start(message: types.Message):
     """
-    Conversation's entry point
+    Help command
     """
     await message.answer(msg.help)
 
 
 @dp.message_handler(commands='login', state='*')
 async def cmd_login(message: types.Message):
-    # Set state
     await States.login_enter_username.set()
 
     await message.answer(msg.enter_name, reply_markup=ReplyKeyboardRemove())
@@ -144,7 +136,6 @@ async def cmd_login(message: types.Message):
 async def login_username_read(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
         data['username'] = message.text
-    # Set state
     await States.login_enter_password.set()
 
     await message.answer(msg.enter_password)
@@ -292,7 +283,6 @@ def generate_text(current_item, _id):
         inline_kb = InlineKeyboardMarkup(row_width=1).add(*btns)
     elif current_item["type"] == "disease":
         progress = progress_api.progress_retrieve(_id)
-        pp = pprint.PrettyPrinter(indent=1, width=200)
         _text = text(f"Название болезни: {current_item['title']}\n"
                      f"Больше информации на ",
                      link("сайте", f'http://dev.teleagronom.com/determinant/{progress.determinant["id"]}/{_id}'),
@@ -324,7 +314,7 @@ async def not_logged(message: types.Message):
 
 
 if __name__ == '__main__':
-    SENTRY_HOST = os.getenv("SENTRY_HOST")
+    SENTRY_HOST = decouple_config("SENTRY_HOST", default=None)
     if SENTRY_HOST:
         from sentry_sdk.integrations.aiohttp import AioHttpIntegration
         import sentry_sdk
