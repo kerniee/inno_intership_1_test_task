@@ -12,5 +12,6 @@ services:
       - REDIS_PORT=6379
       - DEBUG=False
       - API_HOST=http://dev.teleagronom.com
+      # Set SENTRY_HOST or SENTRY_DSN
   redis_db:
     image: redis
