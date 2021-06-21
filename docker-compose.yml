@@ -7,11 +7,11 @@ services:
     links:
       - redis_db
     environment:
-      - USE_REDIS=true
+      - USE_REDIS=True
       - REDIS_IP=redis_db
       - REDIS_PORT=6379
       - DEBUG=False
       - API_HOST=http://dev.teleagronom.com
-      # Set SENTRY_HOST or SENTRY_DSN
+      # Set SENTRY_DSN
   redis_db:
     image: redis

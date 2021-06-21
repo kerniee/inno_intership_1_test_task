@@ -314,31 +314,19 @@ async def not_logged(message: types.Message):
 
 
 if __name__ == '__main__':
-    SENTRY_HOST = decouple_config("SENTRY_HOST", default=None)
     SENTRY_DSN = decouple_config("SENTRY_DSN", default=None)
-    if SENTRY_HOST or SENTRY_DSN:
+    if SENTRY_DSN:
         import sentry_sdk
         from sentry_sdk.integrations.aiohttp import AioHttpIntegration
         from sentry_sdk.integrations.redis import RedisIntegration
-
-        if SENTRY_HOST:
-            sentry_sdk.init(
-                SENTRY_HOST,
-                debug=DEBUG,
-                integrations=[
-                    AioHttpIntegration(),
-                    RedisIntegration()
-                ]
-            )
-        elif SENTRY_DSN:
-            sentry_sdk.init(
-                dsn=SENTRY_DSN,
-                debug=DEBUG,
-                integrations=[
-                    AioHttpIntegration(),
-                    RedisIntegration()
-                ]
-            )
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            debug=DEBUG,
+            integrations=[
+                AioHttpIntegration(),
+                RedisIntegration()
+            ]
+        )
 
     executor.start_polling(dp, skip_updates=True)
     asyncio.run(dp.storage.close())
