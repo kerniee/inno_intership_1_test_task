@@ -16,10 +16,10 @@
 
 #### Дополнительные параметры
 - **API_HOST** = *http://dev.teleagronom.com* - endpoint для API запросов
-- **DEBUG** = *True | False* - включает дополнительное логирование
+- **DEBUG** = *True | False* - включает дополнительное логирование. По умолчанию *False*
   
 
-- **SENTRY_DSN** = *https://public@sentry.example.com/1* - Адрес dsn для sentry. По умолчанию пустой. 
+- **SENTRY_DSN** = *https://public@sentry.example.com/1* - адрес dsn для sentry. По умолчанию пустой. 
   Если не указан, sentry не будет использоваться. Строчка должна быть в формате 
   `{PROTOCOL}://{PUBLIC_KEY}:{SECRET_KEY}@{HOST}{PATH}/{PROJECT_ID}`
 
